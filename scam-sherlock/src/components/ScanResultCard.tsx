@@ -103,6 +103,23 @@ export default function ScanResultCard({ result, index }: ScanResultCardProps) {
                         {result.verdict}
                     </p>
 
+                    {/* Findings */}
+                    {result.findings && result.findings.length > 0 && (
+                        <div className="mb-3 p-3 rounded-xl bg-bg-secondary/50 border border-border-subtle">
+                            <p className="text-xs font-semibold text-text-secondary mb-2 uppercase tracking-wider">Key Findings</p>
+                            <ul className="space-y-1.5">
+                                {result.findings.map((finding, i) => (
+                                    <li key={i} className="flex items-start gap-2 text-sm text-text-secondary leading-relaxed">
+                                        <span className={`mt-1.5 w-1.5 h-1.5 rounded-full flex-shrink-0 ${result.threat_level === 'dangerous' ? 'bg-accent-red' :
+                                                result.threat_level === 'suspicious' ? 'bg-accent-amber' : 'bg-accent-green'
+                                            }`} />
+                                        {finding}
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    )}
+
                     {/* Timestamp */}
                     <div className="flex items-center gap-1.5 text-xs text-text-muted">
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

@@ -1,21 +1,27 @@
 """
 Scam Sherlock — FastAPI Backend
-Real-time scam link detection with Playwright screenshot capture.
+Real-time scam link detection with Playwright screenshot capture + Gemini Vision AI.
 """
 
 import base64
+import json
+import os
+import re
 import uuid
-import random
 from datetime import datetime, timezone
 
+import google.generativeai as genai
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, HttpUrl
 from playwright.sync_api import sync_playwright
+from pydantic import BaseModel
+
+load_dotenv()
 
 # ─── App setup ───────────────────────────────────────────────────────────────
 
-app = FastAPI(title="Scam Sherlock API", version="0.1.0")
+app = FastAPI(title="Scam Sherlock API", version="0.2.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -25,6 +31,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ─── Gemini setup ────────────────────────────────────────────────────────────
+
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
+
 # ─── In-memory store (TODO: replace with Supabase) ──────────────────────────
 
 scan_results: list[dict] = []
@@ -33,7 +45,7 @@ scan_results: list[dict] = []
 
 
 class ScanRequest(BaseModel):
-    url: str  # Using str for flexibility; validated by Playwright navigating to it
+    url: str
 
 
 class ScanResponse(BaseModel):
@@ -41,74 +53,252 @@ class ScanResponse(BaseModel):
     url: str
     timestamp: str
     screenshot_base64: str
-    threat_level: str  # "safe" | "suspicious" | "dangerous"
-    risk_score: int  # 0-100
+    threat_level: str       # "safe" | "suspicious" | "dangerous"
+    risk_score: int          # 0-100
     verdict: str
+    findings: list[str]      # Detailed analysis points
 
 
-# ─── Threat analysis (mock — TODO: integrate Gemini Vision API) ─────────────
+# ─── HTML signal extraction ──────────────────────────────────────────────────
+
+EXTRACTION_SCRIPT = """
+() => {
+    const signals = {};
+
+    // Basic page info
+    signals.title = document.title || '';
+    signals.finalUrl = window.location.href;
+
+    // Forms analysis
+    const forms = document.querySelectorAll('form');
+    signals.formCount = forms.length;
+    signals.formActions = [...forms].map(f => f.action || 'none').slice(0, 5);
+    signals.formMethods = [...forms].map(f => f.method || 'get').slice(0, 5);
+
+    // Input field analysis
+    const inputs = document.querySelectorAll('input');
+    signals.inputTypes = [...inputs].map(i => i.type).slice(0, 15);
+    signals.hasPasswordField = !!document.querySelector('input[type="password"]');
+    signals.hasEmailField = !!document.querySelector('input[type="email"]');
+    signals.hasHiddenFields = document.querySelectorAll('input[type="hidden"]').length;
+
+    // Suspicious text patterns
+    const bodyText = document.body?.innerText?.substring(0, 3000) || '';
+    signals.bodyTextSample = bodyText;
+
+    // Links analysis
+    const links = document.querySelectorAll('a[href]');
+    signals.totalLinks = links.length;
+    const externalLinks = [...links].filter(a => {
+        try { return new URL(a.href).hostname !== window.location.hostname; }
+        catch { return false; }
+    });
+    signals.externalLinkCount = externalLinks.length;
+    signals.externalDomains = [...new Set(externalLinks.map(a => {
+        try { return new URL(a.href).hostname; } catch { return 'invalid'; }
+    }))].slice(0, 10);
+
+    // Script analysis
+    const scripts = document.querySelectorAll('script');
+    signals.scriptCount = scripts.length;
+    signals.externalScripts = [...scripts]
+        .filter(s => s.src)
+        .map(s => s.src)
+        .slice(0, 10);
+
+    // iframes
+    const iframes = document.querySelectorAll('iframe');
+    signals.iframeCount = iframes.length;
+    signals.iframeSources = [...iframes].map(f => f.src || 'about:blank').slice(0, 5);
+
+    // Meta tags
+    const metas = document.querySelectorAll('meta');
+    signals.metaTags = [...metas].map(m => ({
+        name: m.name || m.getAttribute('property') || '',
+        content: (m.content || '').substring(0, 100)
+    })).filter(m => m.name).slice(0, 10);
+
+    // SSL/security indicators in content
+    signals.mentionsSecurity = /secur|ssl|encrypt|protect|verif/i.test(bodyText);
+    signals.mentionsUrgency = /urgent|immediate|suspend|locked|expire|act now|limited time/i.test(bodyText);
+    signals.mentionsCredentials = /password|login|sign.?in|credential|username|account/i.test(bodyText);
+    signals.mentionsFinancial = /bank|credit.?card|paypal|payment|billing|wire|transfer|bitcoin|crypto/i.test(bodyText);
+
+    return signals;
+}
+"""
 
 
-def analyze_threat(url: str, _screenshot_bytes: bytes) -> dict:
-    """
-    Mock threat analysis. In production, this would:
-    1. Send the screenshot to Google Gemini Vision API
-    2. Ask it to identify phishing indicators, fake login forms, etc.
-    3. Return a structured threat assessment
+def extract_page_signals(page) -> dict:
+    """Extract lightweight security-relevant signals from the page DOM."""
+    try:
+        return page.evaluate(EXTRACTION_SCRIPT)
+    except Exception:
+        return {"error": "Failed to extract page signals"}
 
-    TODO: Replace with actual Gemini Vision API call:
-        import google.generativeai as genai
-        genai.configure(api_key=os.environ["GEMINI_API_KEY"])
-        model = genai.GenerativeModel("gemini-2.0-flash")
-        response = model.generate_content([
-            "Analyze this screenshot for phishing/scam indicators...",
-            {"mime_type": "image/png", "data": screenshot_bytes}
-        ])
-    """
-    # Mock scoring based on URL heuristics for demo
-    score = random.randint(5, 95)
 
-    suspicious_keywords = [
-        "login", "verify", "secure", "account", "update", "confirm",
-        "bank", "paypal", "amazon", "microsoft", "apple", "netflix",
-        "free", "winner", "prize", "urgent", "suspended",
+# ─── Gemini Vision threat analysis ───────────────────────────────────────────
+
+ANALYSIS_PROMPT = """You are a cybersecurity analyst specializing in phishing and scam detection.
+
+Analyze the provided webpage screenshot AND the extracted HTML signals below. Determine whether this page is a scam, phishing attempt, or legitimate site.
+
+**Extracted HTML Signals:**
+```json
+{signals_json}
+```
+
+**Your analysis must consider:**
+1. Visual indicators: Does the page impersonate a known brand? Are there fake login forms? Urgent/threatening language?
+2. HTML structure: Are there hidden form fields? Do forms submit to suspicious domains? Are password/email inputs present?
+3. Content patterns: Does the text use urgency tactics? References to account suspension, prizes, or financial information?
+4. Technical signals: Suspicious scripts, iframes, or external domains?
+
+**Respond with ONLY valid JSON in this exact format (no markdown, no code fences):**
+{{
+    "threat_level": "safe" | "suspicious" | "dangerous",
+    "risk_score": <integer 0-100>,
+    "verdict": "<1-2 sentence summary of overall assessment>",
+    "findings": [
+        "<specific finding 1 about what the page is doing or trying to do>",
+        "<specific finding 2>",
+        "<specific finding 3>"
     ]
+}}
 
-    url_lower = url.lower()
-    keyword_hits = sum(1 for kw in suspicious_keywords if kw in url_lower)
+Provide 3-6 specific, actionable findings. Each finding should explain WHAT was detected and WHY it matters.
+Be concise but specific. If the page is safe, explain what makes it trustworthy.
+"""
 
-    if keyword_hits >= 2:
-        score = min(score + 30, 98)
-    elif keyword_hits == 1:
-        score = min(score + 15, 85)
 
-    # Determine threat level
+def analyze_with_gemini(screenshot_bytes: bytes, page_signals: dict) -> dict:
+    """Send screenshot + HTML signals to Gemini Vision for analysis."""
+    if not GEMINI_API_KEY:
+        raise ValueError("GEMINI_API_KEY not set")
+
+    model = genai.GenerativeModel("gemini-2.0-flash")
+
+    # Truncate body text to avoid huge payloads
+    if "bodyTextSample" in page_signals:
+        page_signals["bodyTextSample"] = page_signals["bodyTextSample"][:2000]
+
+    signals_json = json.dumps(page_signals, indent=2, default=str)
+
+    prompt = ANALYSIS_PROMPT.replace("{signals_json}", signals_json)
+
+    response = model.generate_content([
+        prompt,
+        {"mime_type": "image/png", "data": screenshot_bytes},
+    ])
+
+    # Parse the JSON response
+    text = response.text.strip()
+    # Strip markdown code fences if Gemini wraps them anyway
+    text = re.sub(r"^```(?:json)?\s*", "", text)
+    text = re.sub(r"\s*```$", "", text)
+
+    try:
+        result = json.loads(text)
+    except json.JSONDecodeError:
+        # Fallback if Gemini returns malformed JSON
+        result = {
+            "threat_level": "suspicious",
+            "risk_score": 50,
+            "verdict": "Analysis completed but response parsing failed. Manual review recommended.",
+            "findings": ["AI analysis returned an unparseable response. The page should be reviewed manually."],
+        }
+
+    # Validate and clamp values
+    valid_levels = {"safe", "suspicious", "dangerous"}
+    if result.get("threat_level") not in valid_levels:
+        result["threat_level"] = "suspicious"
+    result["risk_score"] = max(0, min(100, int(result.get("risk_score", 50))))
+    if not isinstance(result.get("findings"), list):
+        result["findings"] = [result.get("verdict", "No findings available.")]
+
+    return result
+
+
+def analyze_fallback(url: str, page_signals: dict) -> dict:
+    """Heuristic-based fallback when Gemini API key is not available."""
+    score = 10
+    findings = []
+
+    # Check for password fields
+    if page_signals.get("hasPasswordField"):
+        score += 20
+        findings.append("Page contains a password input field — could be a login or credential harvesting form.")
+
+    # Check for hidden fields
+    hidden = page_signals.get("hasHiddenFields", 0)
+    if hidden > 3:
+        score += 15
+        findings.append(f"Found {hidden} hidden form fields — often used to pass tracking data or disguise form submissions.")
+
+    # Check urgency language
+    if page_signals.get("mentionsUrgency"):
+        score += 20
+        findings.append("Page uses urgency language (e.g., 'suspended', 'act now', 'limited time') — a common social engineering tactic.")
+
+    # Check credential mentions
+    if page_signals.get("mentionsCredentials"):
+        score += 10
+        findings.append("Page references credentials, login, or account information.")
+
+    # Check financial mentions
+    if page_signals.get("mentionsFinancial"):
+        score += 15
+        findings.append("Page mentions financial terms (banking, payment, credit card) — potential financial phishing.")
+
+    # Check forms submitting to external domains
+    form_actions = page_signals.get("formActions", [])
+    final_url = page_signals.get("finalUrl", url)
+    for action in form_actions:
+        if action and action != "none" and final_url:
+            try:
+                from urllib.parse import urlparse
+                action_host = urlparse(action).hostname
+                page_host = urlparse(final_url).hostname
+                if action_host and page_host and action_host != page_host:
+                    score += 25
+                    findings.append(f"Form submits data to a different domain ({action_host}) — strong phishing indicator.")
+                    break
+            except Exception:
+                pass
+
+    # Iframes
+    iframe_count = page_signals.get("iframeCount", 0)
+    if iframe_count > 0:
+        score += 10
+        findings.append(f"Page contains {iframe_count} iframe(s) — could be used to embed malicious content or overlay attacks.")
+
+    # External scripts
+    ext_scripts = page_signals.get("externalScripts", [])
+    if len(ext_scripts) > 5:
+        score += 10
+        findings.append(f"Page loads {len(ext_scripts)} external scripts — increases attack surface.")
+
+    if not findings:
+        findings.append("No significant threat indicators detected in the page structure or content.")
+        findings.append("Page structure appears consistent with legitimate websites.")
+
+    score = min(score, 100)
+
     if score >= 70:
         threat_level = "dangerous"
-        verdicts = [
-            "High-risk page detected. Multiple phishing indicators found including suspicious form elements and misleading branding.",
-            "This URL exhibits characteristics commonly associated with credential harvesting attacks.",
-            "WARNING: Page contains elements consistent with known scam templates. Do not enter personal information.",
-        ]
+        verdict = "High-risk page detected. Multiple phishing indicators found in page structure and content."
     elif score >= 40:
         threat_level = "suspicious"
-        verdicts = [
-            "Several elements on this page warrant caution. The domain structure and content raise moderate concerns.",
-            "This page has some unusual characteristics. Proceed with caution and avoid submitting sensitive data.",
-            "Mixed signals detected. While not definitively malicious, this page shows some red flags worth noting.",
-        ]
+        verdict = "This page shows some concerning characteristics. Proceed with caution."
     else:
         threat_level = "safe"
-        verdicts = [
-            "This page appears legitimate. No significant phishing or scam indicators were detected.",
-            "Low risk assessment. The page structure and content appear consistent with legitimate sites.",
-            "Page scan complete. No immediate threats detected, but always exercise caution online.",
-        ]
+        verdict = "This page appears legitimate. No significant threat indicators were detected."
 
     return {
         "threat_level": threat_level,
         "risk_score": score,
-        "verdict": random.choice(verdicts),
+        "verdict": verdict,
+        "findings": findings,
     }
 
 
@@ -125,17 +315,20 @@ def get_scans():
 def create_scan(req: ScanRequest):
     """
     Scan a URL:
-    1. Launch headless Chromium with Playwright
-    2. Navigate to the URL and wait for network idle
-    3. Capture a full-page screenshot
-    4. Analyze the page for threats (mock for MVP)
-    5. Return the result
+    1. Launch headless Chromium via Playwright
+    2. Navigate & wait for network idle
+    3. Extract HTML signals from the live DOM
+    4. Capture a full-page screenshot
+    5. Send screenshot + signals to Gemini Vision (or fallback to heuristics)
+    6. Return structured threat assessment
     """
     url = req.url
 
-    # Ensure URL has a scheme
     if not url.startswith(("http://", "https://")):
         url = f"https://{url}"
+
+    page_signals = {}
+    screenshot_bytes = b""
 
     try:
         with sync_playwright() as p:
@@ -150,10 +343,12 @@ def create_scan(req: ScanRequest):
             )
             page = context.new_page()
 
-            # Navigate with timeout
             page.goto(url, wait_until="networkidle", timeout=30000)
 
-            # Take full-page screenshot as bytes
+            # Extract HTML signals from the page
+            page_signals = extract_page_signals(page)
+
+            # Capture screenshot
             screenshot_bytes = page.screenshot(full_page=True, type="png")
 
             browser.close()
@@ -161,13 +356,20 @@ def create_scan(req: ScanRequest):
     except Exception as e:
         raise HTTPException(
             status_code=422,
-            detail=f"Failed to capture screenshot: {str(e)}",
+            detail=f"Failed to capture page: {str(e)}",
         )
 
-    # Analyze the screenshot for threats
-    analysis = analyze_threat(url, screenshot_bytes)
+    # Analyze with Gemini or fallback
+    try:
+        if GEMINI_API_KEY:
+            analysis = analyze_with_gemini(screenshot_bytes, page_signals)
+        else:
+            analysis = analyze_fallback(url, page_signals)
+    except Exception as e:
+        # If Gemini fails, fall back to heuristic analysis
+        print(f"Gemini analysis failed: {e}, using fallback")
+        analysis = analyze_fallback(url, page_signals)
 
-    # Build result
     result = {
         "id": str(uuid.uuid4()),
         "url": url,
@@ -176,9 +378,9 @@ def create_scan(req: ScanRequest):
         "threat_level": analysis["threat_level"],
         "risk_score": analysis["risk_score"],
         "verdict": analysis["verdict"],
+        "findings": analysis.get("findings", []),
     }
 
-    # Store (TODO: persist to Supabase)
     scan_results.append(result)
 
     return result

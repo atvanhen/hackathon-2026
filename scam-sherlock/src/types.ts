@@ -6,4 +6,5 @@ export interface ScanResult {
     threat_level: 'safe' | 'suspicious' | 'dangerous';
     risk_score: number;
     verdict: string;
+    findings: string[];
 }
