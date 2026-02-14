@@ -9,6 +9,7 @@ import os
 import re
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 
 import google.generativeai as genai
 from dotenv import load_dotenv
@@ -17,7 +18,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from playwright.sync_api import sync_playwright
 from pydantic import BaseModel
 
-load_dotenv()
+# Load .env from the same directory as this file
+load_dotenv(Path(__file__).resolve().parent / ".env")
 
 # ─── App setup ───────────────────────────────────────────────────────────────
 
@@ -176,7 +178,7 @@ def analyze_with_gemini(screenshot_bytes: bytes, page_signals: dict) -> dict:
     if not GEMINI_API_KEY:
         raise ValueError("GEMINI_API_KEY not set")
 
-    model = genai.GenerativeModel("gemini-2.0-flash")
+    model = genai.GenerativeModel("gemini-flash-latest")
 
     # Truncate body text to avoid huge payloads
     if "bodyTextSample" in page_signals:
