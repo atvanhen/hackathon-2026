@@ -407,12 +407,12 @@ def create_scan(req: ScanRequest):
 
     # Save to Supabase
     try:
-        supabase_client.table("NEW_PHISHING_URLS").insert({
-            "URL_NAME": result["id"],
+        response = supabase_client.table("NEW_PHISHING_URLS").insert({
+            "URL_NAME": result["url"],
             "TIMESTAMP": datetime.now(timezone.utc).isoformat(),
             "RISK_SCORE": result["risk_score"],
-            "DESCRIPTION": f"{result["verdict"]}\n {result["findings"]}"
-        })
+            "DESCRIPTION": f"{result['verdict']}\n {result['findings']}"
+        }).execute()
     except Exception as e:
         print(f"Failed to save to Supabase: {e}")
 
