@@ -341,29 +341,45 @@ def create_scan(req: ScanRequest):
             browser = p.chromium.launch(headless=True)
             context = browser.new_context(
                 viewport={"width": 1280, "height": 800},
-                user_agent=(
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/120.0.0.0 Safari/537.36"
-                ),
+                user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+                ignore_https_errors=True,
+                java_script_enabled=True,
             )
             page = context.new_page()
 
-            page.goto(url, wait_until="networkidle", timeout=30000)
+            # Add stealth scripts to hide automation
+            page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+
+            # Increased timeout for heavy sites like people.com
+            page.goto(url, wait_until="domcontentloaded", timeout=60000)
 
             # Extract HTML signals from the page
             page_signals = extract_page_signals(page)
 
-            # Capture screenshot
-            screenshot_bytes = page.screenshot(full_page=True, type="png")
+            # Capture screenshot (viewport only, to ensure consistent aspect ratio)
+            screenshot_bytes = page.screenshot(full_page=False, type="png")
 
             browser.close()
 
     except Exception as e:
-        raise HTTPException(
-            status_code=422,
-            detail=f"Failed to capture page: {str(e)}",
-        )
+        # If site is unreachable, return a structured error result instead of crashing
+        print(f"Playwright failed: {e}")
+        error_result = {
+            "id": str(uuid.uuid4()),
+            "url": url,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "screenshot_base64": "",  # No screenshot available
+            "threat_level": "suspicious",
+            "risk_score": 75,
+            "verdict": "Scan Failed - Site Unreachable",
+            "findings": [
+                "The website could not be accessed.",
+                "It might be offline, blocking automated scanners, or taken down due to malicious activity.",
+                "Proceed with extreme caution."
+            ]
+        }
+        scan_results.append(error_result)
+        return error_result
 
     # Analyze with Gemini or fallback
     try:
