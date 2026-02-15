@@ -50,6 +50,7 @@ class ScanRequest(BaseModel):
     url: str
 
 
+
 class ScanResponse(BaseModel):
     id: str
     url: str
@@ -307,6 +308,12 @@ def analyze_fallback(url: str, page_signals: dict) -> dict:
 # ─── Routes ──────────────────────────────────────────────────────────────────
 
 
+@app.get("/api/health")
+def health_check():
+    """Simple health check to verify backend is reachable."""
+    return {"status": "Backend is alive and CORS is working"}
+
+
 @app.get("/api/scans")
 def get_scans():
     """Return all scan results, most recent first."""
@@ -379,13 +386,17 @@ def create_scan(req: ScanRequest):
 
     # Analyze with Gemini or fallback
     try:
-        if GEMINI_API_KEY:
+        if GEMINI_API_KEY and GEMINI_API_KEY != "YOUR_ACTUAL_API_KEY_HERE":
+            print(f"🔍 Analyzing {url} with Gemini Pro Vision...")
             analysis = analyze_with_gemini(screenshot_bytes, page_signals)
+            print("✅ Gemini Analysis Complete.")
         else:
+            print("⚠️ GEMINI_API_KEY not found or invalid. Using Heuristic Fallback.")
             analysis = analyze_fallback(url, page_signals)
     except Exception as e:
         # If Gemini fails, fall back to heuristic analysis
-        print(f"Gemini analysis failed: {e}, using fallback")
+        print(f"❌ Gemini analysis failed: {e}")
+        print("⚠️ Falling back to Heuristic Analysis.")
         analysis = analyze_fallback(url, page_signals)
 
     result = {
