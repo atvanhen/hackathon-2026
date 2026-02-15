@@ -18,6 +18,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from playwright.sync_api import sync_playwright
 from pydantic import BaseModel
 
+from supabase import create_client, Client
+
 # Load .env from the same directory as this file
 load_dotenv(Path(__file__).resolve().parent / ".env")
 
@@ -40,7 +42,9 @@ if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
 
 # ─── In-memory store (TODO: replace with Supabase) ──────────────────────────
-
+supabase_url = os.getenv("SUPABASE_URL")
+supabase_key = os.getenv("SUPABASE_KEY")
+supabase_client = create_client(supabase_url, supabase_key)
 scan_results: list[dict] = []
 
 # ─── Models ──────────────────────────────────────────────────────────────────
@@ -384,5 +388,16 @@ def create_scan(req: ScanRequest):
     }
 
     scan_results.append(result)
+
+    # Save to Supabase
+    try:
+        supabase_client.table("NEW_PHISHING_URLS").insert({
+            "URL_NAME": result["id"],
+            "TIMESTAMP": datetime.now(timezone.utc).isoformat(),
+            "RISK_SCORE": result["risk_score"],
+            "DESCRIPTION": f"{result["verdict"]}\n {result["findings"]}"
+        })
+    except Exception as e:
+        print(f"Failed to save to Supabase: {e}")
 
     return result
