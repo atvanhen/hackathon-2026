@@ -38,6 +38,11 @@ export default function Scanner() {
       const data: ScanResult = await response.json();
       setResults((prev) => [data, ...prev]);
       
+      // Save to LocalStorage for Threat Ledger
+      const existingHistory = JSON.parse(localStorage.getItem('scan_history') || '[]');
+      const newHistory = [data, ...existingHistory];
+      localStorage.setItem('scan_history', JSON.stringify(newHistory));
+      
       // Award XP & Stat
       addXP(50);
       incrementStat('totalScans', 1);
