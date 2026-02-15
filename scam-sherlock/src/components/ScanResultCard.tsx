@@ -60,16 +60,27 @@ export default function ScanResultCard({ result, index }: ScanResultCardProps) {
         >
             <div className="flex flex-col md:flex-row">
                 {/* Screenshot */}
-                {result.screenshot_base64 && (
-                    <div className="md:w-72 h-48 md:h-auto flex-shrink-0 relative overflow-hidden bg-bg-secondary">
-                        <img
-                            src={`data:image/png;base64,${result.screenshot_base64}`}
-                            alt={`Screenshot of ${result.url}`}
-                            className="w-full h-full object-cover object-top"
-                        />
-                        <div className="absolute inset-0 bg-gradient-to-t from-bg-primary/80 via-transparent to-transparent" />
-                    </div>
-                )}
+                <div className="md:w-72 h-48 md:h-auto flex-shrink-0 relative overflow-hidden bg-bg-secondary flex items-center justify-center border-b md:border-b-0 md:border-r border-border-subtle">
+                    {result.screenshot_base64 ? (
+                        <>
+                            <img
+                                src={`data:image/png;base64,${result.screenshot_base64}`}
+                                alt={`Screenshot of ${result.url}`}
+                                className="w-full h-full object-cover object-top"
+                            />
+                            <div className="absolute inset-0 bg-gradient-to-t from-bg-primary/80 via-transparent to-transparent" />
+                        </>
+                    ) : (
+                        <div className="flex flex-col items-center justify-center text-text-muted p-4 text-center">
+                            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" className="mb-2 opacity-50">
+                                <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                                <line x1="9" y1="9" x2="15" y2="15" />
+                                <line x1="15" y1="9" x2="9" y2="15" />
+                            </svg>
+                            <span className="text-xs">Preview unavailable</span>
+                        </div>
+                    )}
+                </div>
 
                 {/* Details */}
                 <div className="flex-1 p-5">
@@ -111,7 +122,7 @@ export default function ScanResultCard({ result, index }: ScanResultCardProps) {
                                 {result.findings.map((finding, i) => (
                                     <li key={i} className="flex items-start gap-2 text-sm text-text-secondary leading-relaxed">
                                         <span className={`mt-1.5 w-1.5 h-1.5 rounded-full flex-shrink-0 ${result.threat_level === 'dangerous' ? 'bg-accent-red' :
-                                                result.threat_level === 'suspicious' ? 'bg-accent-amber' : 'bg-accent-green'
+                                            result.threat_level === 'suspicious' ? 'bg-accent-amber' : 'bg-accent-green'
                                             }`} />
                                         {finding}
                                     </li>
