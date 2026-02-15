@@ -169,7 +169,7 @@ export default function Analytics() {
                                     outerRadius={80}
                                     paddingAngle={5}
                                     dataKey="value"
-                                    label={({ percent }) => `${(percent * 100).toFixed(0)}%`}
+                                    label={({ percent }: { percent?: number }) => `${((percent || 0) * 100).toFixed(0)}%`}
                                     labelLine={false}
                                 >
                                     {pieData.map((entry, index) => (
