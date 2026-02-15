@@ -26,7 +26,7 @@ export default function HeroSection({ onScan, isLoading }: HeroSectionProps) {
 
                 {/* Hero headline */}
                 <h1 className="text-5xl md:text-7xl font-bold font-sherlock tracking-tight mb-6 leading-none text-text-primary uppercase">
-                    Expose <span className="text-trenchcoat glow-trenchcoat">Scam Links</span>
+                    Expose <span className="text-trenchcoat glow-trenchcoat text-glitch" data-text="Scam Links">Scam Links</span>
                     <br />
                     <span className="text-text-muted text-4xl md:text-6xl">Before They Strike.</span>
                 </h1>

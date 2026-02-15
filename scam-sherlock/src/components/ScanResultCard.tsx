@@ -155,7 +155,7 @@ export default function ScanResultCard({ result, index }: ScanResultCardProps) {
                     </div>
 
                     {/* Verdict */}
-                    <p className="text-sm text-text-secondary mb-5 leading-relaxed border-l-2 border-white/10 pl-3">
+                    <p className="text-sm text-text-secondary mb-5 leading-relaxed border-l-2 border-white/10 pl-3 animate-fade-in-up" style={{ animationDelay: '200ms' }}>
                         {result.verdict}
                     </p>
 
@@ -165,7 +165,7 @@ export default function ScanResultCard({ result, index }: ScanResultCardProps) {
                             <p className="text-[10px] font-mono font-bold text-text-muted mb-2 uppercase tracking-widest">Forensic Analysis</p>
                             <ul className="space-y-2">
                                 {result.findings.map((finding, i) => (
-                                    <li key={i} className="flex items-start gap-2 text-xs text-text-secondary font-mono leading-relaxed">
+                                    <li key={i} className="flex items-start gap-2 text-xs text-text-secondary font-mono leading-relaxed animate-fade-in-right" style={{ animationDelay: `${300 + (i * 100)}ms` }}>
                                         <span className={`mt-1.5 w-1 h-1 rounded-full flex-shrink-0 ${result.threat_level === 'dangerous' ? 'bg-siren' :
                                             result.threat_level === 'suspicious' ? 'bg-trenchcoat' : 'bg-neon-cyan'
                                             }`} />
