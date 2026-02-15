@@ -5,6 +5,10 @@ import Scanner from './pages/Scanner';
 import Wiretap from './pages/Wiretap';
 import TrainingDossier from './pages/TrainingDossier';
 import Dispatcher from './pages/Dispatcher';
+import Analytics from './pages/Analytics';
+import AgentProfile from './pages/AgentProfile';
+
+import SigIntMap from './pages/SigIntMap';
 
 function App() {
   return (
@@ -12,9 +16,12 @@ function App() {
       <Routes>
         <Route path="/" element={<Layout />}>
           <Route index element={<Scanner />} />
+          <Route path="map" element={<SigIntMap />} />
           <Route path="wiretap" element={<Wiretap />} />
           <Route path="training" element={<TrainingDossier />} />
           <Route path="dispatch" element={<Dispatcher />} />
+          <Route path="analytics" element={<Analytics />} />
+          <Route path="profile" element={<AgentProfile />} />
         </Route>
       </Routes>
     </BrowserRouter>

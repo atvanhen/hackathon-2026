@@ -49,9 +49,33 @@ const threatConfig = {
     },
 };
 
+const getScamCategory = (result: ScanResult) => {
+    const text = (result.verdict + " " + result.findings.join(" ")).toLowerCase();
+    
+    if (text.includes("sms") || text.includes("text message") || text.includes("delivery")) {
+        return { label: "SMISHING", reason: "SMS-based lure detected" };
+    }
+    if (text.includes("call") || text.includes("voice") || text.includes("helpline") || text.includes("toll-free")) {
+        return { label: "VISHING", reason: "Voice/Phone scam indicators found" };
+    }
+    if (text.includes("support") || text.includes("microsoft") || text.includes("virus") || text.includes("infected")) {
+        return { label: "TECH SUPPORT", reason: "Suspicious remote access patterns detected" };
+    }
+    if (text.includes("crypto") || text.includes("bitcoin") || text.includes("invest") || text.includes("profit")) {
+        return { label: "INVESTMENT", reason: "Unrealistic financial promises identified" };
+    }
+    if (text.includes("login") || text.includes("bank") || text.includes("account") || text.includes("verify") || text.includes("credential")) {
+        return { label: "PHISHING", reason: "Credential harvesting attempt detected" };
+    }
+    
+    return { label: "OTHER", reason: "General malicious activity detected" };
+};
+
 export default function ScanResultCard({ result, index }: ScanResultCardProps) {
     const config = threatConfig[result.threat_level];
     const formattedDate = new Date(result.timestamp).toLocaleString();
+    const category = getScamCategory(result);
+    const isSafe = result.threat_level === 'safe';
 
     return (
         <div
@@ -94,13 +118,31 @@ export default function ScanResultCard({ result, index }: ScanResultCardProps) {
                             {config.label}
                         </div>
 
-                        {/* Risk score */}
-                        <div className="text-right">
-                            <div className={`text-3xl font-bold font-sherlock ${config.color}`}>
-                                {result.risk_score}
-                                <span className="text-sm font-normal text-text-muted ml-0.5">/100</span>
+                        {/* Risk score & Category */}
+                        <div className="text-right flex flex-col items-end gap-2">
+                            <div>
+                                <div className={`text-3xl font-bold font-sherlock ${config.color}`}>
+                                    {result.risk_score}
+                                    <span className="text-sm font-normal text-text-muted ml-0.5">/100</span>
+                                </div>
+                                <div className="text-[10px] font-mono text-text-muted uppercase tracking-widest">Risk Score</div>
                             </div>
-                            <div className="text-[10px] font-mono text-text-muted uppercase tracking-widest">Risk Score</div>
+                            
+                            {/* Threat Category Badge */}
+                            {!isSafe && (
+                                <div className="mt-1 flex flex-col items-end">
+                                    <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase tracking-wider border animate-pulse ${
+                                        isSafe 
+                                        ? 'border-trenchcoat text-trenchcoat bg-white/5' 
+                                        : 'border-siren text-siren bg-siren/10'
+                                    }`}>
+                                        {category.label}
+                                    </span>
+                                    <span className="text-[9px] text-text-secondary font-mono mt-0.5 max-w-[150px] leading-tight text-right">
+                                        {category.reason}
+                                    </span>
+                                </div>
+                            )}
                         </div>
                     </div>
 

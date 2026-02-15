@@ -4,11 +4,14 @@ import HeroSection from '../components/HeroSection';
 import ScanFeed from '../components/ScanFeed';
 import LoadingSpinner from '../components/LoadingSpinner';
 import type { ScanResult } from '../types';
+import { useAgentProgress } from '../hooks/useAgentProgress';
 
 export default function Scanner() {
   const [results, setResults] = useState<ScanResult[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [xpNotification, setXpNotification] = useState<string | null>(null);
+  const { addXP, incrementStat } = useAgentProgress();
 
   const handleScan = async (url: string) => {
     setIsLoading(true);
@@ -34,6 +37,14 @@ export default function Scanner() {
 
       const data: ScanResult = await response.json();
       setResults((prev) => [data, ...prev]);
+      
+      // Award XP & Stat
+      addXP(50);
+      incrementStat('totalScans', 1);
+      
+      setXpNotification('+50 XP');
+      setTimeout(() => setXpNotification(null), 2000);
+
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An unexpected error occurred.');
     } finally {
@@ -42,7 +53,17 @@ export default function Scanner() {
   };
 
   return (
-    <div className="max-w-6xl mx-auto space-y-12">
+    <div className="max-w-6xl mx-auto space-y-12 relative">
+      {/* XP Notification */}
+      {xpNotification && (
+         <div className="fixed top-24 right-8 z-50 animate-bounce-in">
+            <div className="bg-trenchcoat text-noir-bg font-bold font-mono px-4 py-2 rounded shadow-[0_0_15px_rgba(255,184,0,0.6)] flex items-center gap-2">
+                <span>{xpNotification}</span>
+                <span className="text-xl">✨</span>
+            </div>
+         </div>
+      )}
+
       <HeroSection onScan={handleScan} isLoading={isLoading} />
 
       {/* Error banner */}

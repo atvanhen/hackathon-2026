@@ -1,8 +1,11 @@
 
 import { useState, useEffect } from 'react';
 import { Copy, FileText, Check, Trash2 } from 'lucide-react';
+import { useAgentProgress } from '../hooks/useAgentProgress';
 
 export default function Wiretap() {
+  const { addXP, incrementStat } = useAgentProgress();
+  // ...
   // Lazy state initialization from localStorage
   const [rawText, setRawText] = useState(() => {
     return localStorage.getItem('wiretap_text') || '';
@@ -14,6 +17,7 @@ export default function Wiretap() {
   });
 
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+  const [xpNotification, setXpNotification] = useState<string | null>(null);
 
   // Persistence effect
   useEffect(() => {
@@ -29,7 +33,16 @@ export default function Wiretap() {
 
     const urlRegex = /(https?:\/\/[^\s]+)/g;
     const matches = rawText.match(urlRegex);
-    setExtractedUrls(matches ? Array.from(new Set(matches)) : []); // Deduplicate results
+    const results = matches ? Array.from(new Set(matches)) : [];
+    
+    setExtractedUrls(results); // Deduplicate results
+
+    if (results.length > 0) {
+        addXP(50);
+        incrementStat('totalCharsProcessed', rawText.length);
+        setXpNotification(`+50 XP: ${results.length} Links Found`);
+        setTimeout(() => setXpNotification(null), 3000);
+    }
   };
 
   const handleClear = () => {
@@ -50,7 +63,16 @@ export default function Wiretap() {
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-8 animate-fade-in-up">
+    <div className="max-w-4xl mx-auto space-y-8 animate-fade-in-up relative">
+      {/* XP Notification */}
+      {xpNotification && (
+         <div className="fixed top-24 right-8 z-50 animate-bounce-in">
+            <div className="bg-trenchcoat text-noir-bg font-bold font-mono px-4 py-2 rounded shadow-[0_0_15px_rgba(255,184,0,0.6)] flex items-center gap-2">
+                <span>{xpNotification}</span>
+                <span className="text-xl">✨</span>
+            </div>
+         </div>
+      )}
       {/* Header */}
       <div className="space-y-2">
         <h1 className="text-4xl md:text-5xl font-sherlock font-bold tracking-tight">

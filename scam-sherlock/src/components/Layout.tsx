@@ -1,16 +1,19 @@
 
 import { useState } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
-import { Search, FileText, Menu, X, GraduationCap, Send } from 'lucide-react';
+import { Search, FileText, Menu, X, GraduationCap, Send, Activity, User, Globe } from 'lucide-react';
 
 export default function Layout() {
   const [isSidebarOpen, setSidebarOpen] = useState(false);
 
   const navItems = [
     { name: 'The Scanner', path: '/', icon: Search },
+    { name: 'Signal Map', path: '/map', icon: Globe },
     { name: 'The Wiretap', path: '/wiretap', icon: FileText },
     { name: 'Training Dossier', path: '/training', icon: GraduationCap },
     { name: 'The Dispatcher', path: '/dispatch', icon: Send },
+    { name: 'Analytics Board', path: '/analytics', icon: Activity },
+    { name: 'Agent Profile', path: '/profile', icon: User },
   ];
 
   return (
