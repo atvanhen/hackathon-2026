@@ -18,6 +18,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from playwright.sync_api import sync_playwright
 from pydantic import BaseModel
 
+from supabase import create_client, Client
+
 # Load .env from the same directory as this file
 load_dotenv(Path(__file__).resolve().parent / ".env")
 
@@ -40,7 +42,9 @@ if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
 
 # ─── In-memory store (TODO: replace with Supabase) ──────────────────────────
-
+supabase_url = os.getenv("SUPABASE_URL")
+supabase_key = os.getenv("SUPABASE_KEY")
+supabase_client = create_client(supabase_url, supabase_key)
 scan_results: list[dict] = []
 
 # ─── Models ──────────────────────────────────────────────────────────────────
@@ -137,6 +141,27 @@ def extract_page_signals(page) -> dict:
         return page.evaluate(EXTRACTION_SCRIPT)
     except Exception:
         return {"error": "Failed to extract page signals"}
+
+
+def normalize_url(url: str) -> str:
+    """Normalize URL for consistent cache matching."""
+    url = url.strip().lower()
+    if not url.startswith(("http://", "https://")):
+        url = f"https://{url}"
+    # Remove trailing slash
+    if url.endswith("/"):
+        url = url[:-1]
+    return url
+
+
+def get_cached_placeholder() -> str:
+    """Return base64 encoded placeholder image for cached results."""
+    placeholder_path = Path(__file__).resolve().parent / "assets" / "cached_result.png"
+    if placeholder_path.exists():
+        with open(placeholder_path, "rb") as f:
+            return base64.b64encode(f.read()).decode("utf-8")
+    # Minimal 1x1 transparent PNG fallback
+    return "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
 
 
 # ─── Gemini Vision threat analysis ───────────────────────────────────────────
@@ -324,10 +349,65 @@ def create_scan(req: ScanRequest):
     5. Send screenshot + signals to Gemini Vision (or fallback to heuristics)
     6. Return structured threat assessment
     """
-    url = req.url
+    url = normalize_url(req.url)
 
-    if not url.startswith(("http://", "https://")):
-        url = f"https://{url}"
+    # 1. Check if URL already exists in Supabase cache
+    try:
+        existing = supabase_client.table("NEW_PHISHING_URLS").select("*").eq("URL_NAME", url).order("TIMESTAMP", desc=True).limit(1).execute()
+        if existing.data:
+            cached = existing.data[0]
+            # Try to recover original verdict and findings from stored DESCRIPTION
+            description = cached.get('DESCRIPTION', '')
+            verdict = "Investigation findings restored from archives."
+            findings = []
+            
+            if "\n " in description:
+                parts = description.split("\n ", 1)
+                verdict = parts[0]
+                findings_str = parts[1]
+                # Format the archival timestamp
+                try:
+                    dt = datetime.fromisoformat(cached.get('TIMESTAMP', '')).strftime('%Y-%m-%d %H:%M')
+                    archive_msg = f"📂 CASE ALREADY CRACKED: Solved on {dt}. Pulling files from archive."
+                except:
+                    archive_msg = "📂 CASE ALREADY CRACKED: Pulling files from the archive."
+
+                # Try to parse the findings list string if it looks like one
+                if findings_str.startswith("[") and findings_str.endswith("]"):
+                    import ast
+                    try:
+                        findings = ast.literal_eval(findings_str)
+                    except:
+                        findings = [findings_str.strip("[]'\" ")]
+                else:
+                    findings = [findings_str]
+                
+                # Add themed archive header
+                findings.insert(0, archive_msg)
+            else:
+                verdict = description
+                # Same formatting for fallback
+                try:
+                    dt = datetime.fromisoformat(cached.get('TIMESTAMP', '')).strftime('%Y-%m-%d %H:%M')
+                    findings = [f"📂 CASE ALREADY CRACKED: Solved on {dt}. Accessing archives."]
+                except:
+                    findings = ["📂 CASE ALREADY CRACKED: Accessing archives."]
+
+            result = {
+                "id": f"cached-{uuid.uuid4()}",
+                "url": url,
+                "timestamp": cached.get("TIMESTAMP", datetime.now(timezone.utc).isoformat()),
+                "screenshot_base64": get_cached_placeholder(),
+                "threat_level": "dangerous" if cached["RISK_SCORE"] >= 70 else ("suspicious" if cached["RISK_SCORE"] >= 40 else "safe"),
+                "risk_score": cached["RISK_SCORE"],
+                "verdict": verdict,
+                "findings": findings
+            }
+            # Add back to in-memory list so it shows in the feed
+            scan_results.append(result)
+            return result
+    except Exception as e:
+        print(f"Supabase cache lookup failed: {e}")
 
     page_signals = {}
     screenshot_bytes = b""
@@ -400,5 +480,16 @@ def create_scan(req: ScanRequest):
     }
 
     scan_results.append(result)
+
+    # Save to Supabase
+    try:
+        response = supabase_client.table("NEW_PHISHING_URLS").insert({
+            "URL_NAME": result["url"],
+            "TIMESTAMP": datetime.now(timezone.utc).isoformat(),
+            "RISK_SCORE": result["risk_score"],
+            "DESCRIPTION": f"{result['verdict']}\n {result['findings']}"
+        }).execute()
+    except Exception as e:
+        print(f"Failed to save to Supabase: {e}")
 
     return result
