@@ -71,13 +71,16 @@ export default function ScanResultCard({ result, index }: ScanResultCardProps) {
                             <div className="absolute inset-0 bg-gradient-to-t from-bg-primary/80 via-transparent to-transparent" />
                         </>
                     ) : (
-                        <div className="flex flex-col items-center justify-center text-text-muted p-4 text-center">
-                            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" className="mb-2 opacity-50">
-                                <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-                                <line x1="9" y1="9" x2="15" y2="15" />
-                                <line x1="15" y1="9" x2="9" y2="15" />
-                            </svg>
-                            <span className="text-xs">Preview unavailable</span>
+                        <div className="w-full h-full bg-bg-secondary flex items-center justify-center relative">
+                            <img
+                                src="/site-unreachable.png"
+                                alt="Site Unreachable"
+                                className="w-full h-full object-cover opacity-50 grayscale hover:grayscale-0 transition-all duration-500"
+                                onError={(e) => {
+                                    e.currentTarget.style.display = 'none';
+                                    e.currentTarget.parentElement!.innerHTML = '<div class="p-4 text-center"><div class="text-text-muted text-xs font-semibold mb-1">CONNECTION FAILED</div><div class="text-text-subtle text-[10px]">Preview unavailable</div></div>';
+                                }}
+                            />
                         </div>
                     )}
                 </div>

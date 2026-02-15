@@ -346,13 +346,14 @@ def create_scan(req: ScanRequest):
             # Add stealth scripts to hide automation
             page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
 
+            # Increased timeout for heavy sites like people.com
             page.goto(url, wait_until="domcontentloaded", timeout=60000)
 
             # Extract HTML signals from the page
             page_signals = extract_page_signals(page)
 
-            # Capture screenshot
-            screenshot_bytes = page.screenshot(full_page=True, type="png")
+            # Capture screenshot (viewport only, to ensure consistent aspect ratio)
+            screenshot_bytes = page.screenshot(full_page=False, type="png")
 
             browser.close()
 
