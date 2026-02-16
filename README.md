@@ -56,4 +56,4 @@ Security is a habit. Our **Agent Profile** system scales difficulty as you progr
 
 ---
 
-**Developed for the 2026 Hackathon by Rudra Patel & Team.** *Scanning the shadows so you don't have to.*
+**Developed for the 2026 Hackathon.** *Scanning the shadows so you don't have to.*
